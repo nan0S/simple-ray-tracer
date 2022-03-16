@@ -10,7 +10,7 @@
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
 #include <assimp/Importer.hpp>
-#include <assimp/pbrmaterial.h>
+#include <assimp/material.h>
 
 #include "Utils/Log.h"
 #include "Utils/Error.h"
@@ -45,6 +45,7 @@ struct WindowContext {
    glm::mat4 projection;
    float clip_dist_min;
    float clip_dist_max;
+   float fov;
 };
 
 struct Triangle
@@ -77,29 +78,14 @@ struct RenderData
    std::vector<uint> indices;
 };
 
-static void glfwErrorCallback(int code, const char* desc);
+static void glfwErrorCallback(int code, const char *desc);
 static void windowResizeCallback(GLFWwindow*, int width, int height);
 static void keyInputCallback(GLFWwindow* window, int key, int, int action, int);
 
-// TODO: remove
-template<class T>
-std::ostream& operator<<(std::ostream& out, const glm::vec<3, T>& v)
-{
-   return out << '[' << v.x << ',' << v.y << ',' << v.z << ']';
-}
+template<class T> std::ostream& operator<<(std::ostream &out, const glm::vec<3, T>& v);
+template<class T> std::istream& operator>>(std::istream &in, glm::vec<3, T> &v);
 
-template<class T>
-std::istream& operator>>(std::istream& in, glm::vec<3, T>& v)
-{
-   return in >> v.x >> v.y >> v.z;
-}
-
-std::ostream& operator<<(std::ostream& out, const aiVector3D& v)
-{
-   return out << '[' << v.x << ',' << v.y << ',' << v.z << ']';
-}
-
-static const char* USAGE_STR =
+static const char *USAGE_STR =
 "Usage: ./raytracer CONFIG_FILE\n\n"
 "Confiration file template:\n\n"
 "comment\n"
@@ -113,24 +99,24 @@ static const char* USAGE_STR =
 "[yview] (default=1)\n"
 "[L light_pos_x light_pos_y light_pos_y light_col_x light_col_y intensity]...";
 
-static const char* INSTRUCTION_STR =
-"Ues WASD to move, mouse to look around.\n"
+static const char *INSTRUCTION_STR =
+"Use WASD to move, MOUSE to look around.\n"
 "Press U to update the current configuration.\n"
+"Press LEFT MOUSE BUTTON to print the current position (useful for chaning script manually).\n"
 "Press ESCAPE/Q to quit.";
 
 static constexpr int WINDOW_WIDTH = 1280;
 static constexpr int WINDOW_HEIGHT = 720;
-static constexpr float FOV = 60;
 static constexpr float CLIP_DIST_MIN_FACTOR = 0.0001f;
 static constexpr float CLIP_DIST_MAX_FACTOR = 20;
 static constexpr float MOVEMENT_SPEED_FACTOR = 0.45f;
-static constexpr float LOOK_SENSITIVITY = 0.5f;
+static constexpr float LOOK_SENSITIVITY = 0.3f;
 
-int main(int argc, char* argv[])
+int main(int argc, char *argv[])
 {
    if (argc != 2)
       ERROR(USAGE_STR);
-   const char* config_file_path = argv[1];
+   const char *config_file_path = argv[1];
 
    /* Parse configuration. */
    Config config;
@@ -267,7 +253,7 @@ int main(int argc, char* argv[])
             const aiMesh *mesh = scene->mMeshes[i];
             const aiVector3D *verts = mesh->mVertices;
             const aiVector3D *normals = mesh->mNormals;
-            const aiMaterial* mat = scene->mMaterials[mesh->mMaterialIndex];
+            const aiMaterial *mat = scene->mMaterials[mesh->mMaterialIndex];
 
             aiColor3D ka, kd, ks;
             mat->Get(AI_MATKEY_COLOR_AMBIENT, ka);
@@ -284,7 +270,7 @@ int main(int argc, char* argv[])
             for (uint j = 0; j < mesh->mNumFaces; ++j)
             {
                aiFace face = mesh->mFaces[j];
-               Triangle& tri = rtdata.tris.emplace_back();
+               Triangle &tri = rtdata.tris.emplace_back();
                assert(face.mNumIndices == 3);
 
                for (uint k = 0; k < face.mNumIndices; ++k)
@@ -320,6 +306,7 @@ int main(int argc, char* argv[])
                min_point.y = std::min(min_point.y, vertex.y);
                min_point.z = std::min(min_point.z, vertex.z);
             }
+
             index_offset += mesh->mNumVertices;
          }
       }
@@ -398,7 +385,7 @@ int main(int argc, char* argv[])
    GL_CALL(GLint vp_loc = glGetUniformLocation(shader, "vp"));
    {
       GL_CALL(GLint light_count_loc = glGetUniformLocation(shader, "light_count"));
-      GL_CALL(glUniform1i(light_count_loc, config.lights.size()));
+      GL_CALL(glUniform1i(light_count_loc, static_cast<int>(config.lights.size())));
    }
    for (size_t i = 0; i < config.lights.size(); ++i)
    {
@@ -437,9 +424,11 @@ int main(int argc, char* argv[])
    float movement_speed = dist_bound * MOVEMENT_SPEED_FACTOR;
    window_context.clip_dist_min = dist_bound * CLIP_DIST_MIN_FACTOR;
    window_context.clip_dist_max = dist_bound * CLIP_DIST_MAX_FACTOR;
+   window_context.fov = 2 * std::atan(0.5f / config.yview);
    windowResizeCallback(window, WINDOW_WIDTH, WINDOW_HEIGHT);
 
-   int last_state = GLFW_RELEASE;
+   int u_last_state = GLFW_RELEASE;
+   int left_last_state = GLFW_RELEASE;
 
    print(INSTRUCTION_STR);
 
@@ -494,31 +483,40 @@ int main(int argc, char* argv[])
       }
       /* Respond to other commands. */
       {
-         int state = glfwGetKey(window, GLFW_KEY_U);
-         // Update configuration.
-         if (last_state == GLFW_RELEASE && state == GLFW_PRESS)
+         /* Update configuration. */
          {
-            std::ofstream out(config_file_path);
-            glm::vec3 la = position + forward;
-            out << config.comment << '\n';
-            out << config.obj_file_path << '\n';
-            out << config.output_file_path << '\n';
-            out << config.k << '\n';
-            out << config.xres << ' ' << config.yres << '\n';
-            out << position.x << ' ' << position.y << ' ' << position.z << '\n';
-            out << la.x << ' ' << la.y << ' ' << la.z << '\n';
-            out << config.up.x << ' ' << config.up.y << ' ' << config.up.z << '\n';
-            out << config.yview << '\n';
-            for (Light &l : config.lights)
+            int u_state = glfwGetKey(window, GLFW_KEY_U);
+            if (u_last_state == GLFW_RELEASE && u_state == GLFW_PRESS)
             {
-               glm::ivec3 color(l.color.x * 255, l.color.y * 255, l.color.z * 255);
-               out << "L " << l.position.x << ' ' << l.position.y << ' ' << l.position.z << ' ';
-               out << color.x << ' ' << color.y << ' ' << color.z << ' ';
-               out << l.intensity * 100 << '\n';
+               std::ofstream out(config_file_path);
+               glm::vec3 la = position + forward;
+               out << config.comment << '\n';
+               out << config.obj_file_path << '\n';
+               out << config.output_file_path << '\n';
+               out << config.k << '\n';
+               out << config.xres << ' ' << config.yres << '\n';
+               out << position.x << ' ' << position.y << ' ' << position.z << '\n';
+               out << la.x << ' ' << la.y << ' ' << la.z << '\n';
+               out << config.up.x << ' ' << config.up.y << ' ' << config.up.z << '\n';
+               out << config.yview << '\n';
+               for (Light &l : config.lights)
+               {
+                  glm::ivec3 color(l.color.x * 255, l.color.y * 255, l.color.z * 255);
+                  out << "L " << l.position.x << ' ' << l.position.y << ' ' << l.position.z << ' ';
+                  out << color.x << ' ' << color.y << ' ' << color.z << ' ';
+                  out << l.intensity * 100 << '\n';
+               }
+               print("Configuration updated.");
             }
-            print("Configuration updated.");
+            u_last_state = u_state;
          }
-         last_state = state;
+         /* Print info. */
+         {
+            int left_state = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT);
+            if (left_last_state == GLFW_RELEASE && left_state == GLFW_PRESS)
+               print(position);
+            left_last_state = left_state;
+         }
       }
 
       GL_CALL(glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT));
@@ -530,7 +528,7 @@ int main(int argc, char* argv[])
    return 0;
 }
 
-void glfwErrorCallback(int code, const char* desc)
+void glfwErrorCallback(int code, const char *desc)
 {
    ERROR("[GLFW Error] '", desc, "' (", code, ")");
 }
@@ -539,8 +537,7 @@ void windowResizeCallback(GLFWwindow* window, int width, int height)
 {
    WindowContext* ctx = (WindowContext*)glfwGetWindowUserPointer(window);
    float aspect = static_cast<float>(width) / static_cast<float>(height);
-   ctx->projection = glm::perspective(glm::radians(FOV), aspect,
-                                      ctx->clip_dist_min, ctx->clip_dist_max);
+   ctx->projection = glm::perspective(ctx->fov, aspect, ctx->clip_dist_min, ctx->clip_dist_max);
    GL_CALL(glViewport(0, 0, width, height));
 }
 
@@ -554,4 +551,16 @@ void keyInputCallback(GLFWwindow* window, int key, int, int action, int)
             glfwSetWindowShouldClose(window, GL_TRUE);
          break;
    }
+}
+
+template<class T>
+std::ostream& operator<<(std::ostream &out, const glm::vec<3, T>& v)
+{
+   return out << v.x << ' ' << v.y << ' ' << v.z;
+}
+
+template<class T>
+std::istream& operator>>(std::istream &in, glm::vec<3, T> &v)
+{
+   return in >> v.x >> v.y >> v.z;
 }

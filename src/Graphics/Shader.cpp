@@ -121,19 +121,19 @@ namespace Graphics
       {GL_UNSIGNED_INT_ATOMIC_COUNTER,                "atomic_uint"}
    };
 
-   static std::string slurp(const char* filepath);
-   static GLuint compileShader(GLenum type, const char* source);
+   static std::string slurp(const char *filepath);
+   static GLuint compileShader(GLenum type, const char *source);
    static const char* shaderTypeToString(GLenum type);
    static void checkLinkErrors(GLuint program);
 
-   GLuint loadGraphicsShader(const char* vertex_path, const char* fragment_path)
+   GLuint loadGraphicsShader(const char *vertex_path, const char *fragment_path)
    {
       const std::string &vertex_source = slurp(vertex_path);
       const std::string &fragment_source = slurp(fragment_path);
       return createGraphicsShader(vertex_source.c_str(), fragment_source.c_str());
    }
 
-   GLuint createGraphicsShader(const char* vertex_source, const char* fragment_source)
+   GLuint createGraphicsShader(const char *vertex_source, const char *fragment_source)
    {
       GLuint vs = compileShader(GL_VERTEX_SHADER, vertex_source);
       GLuint fs = compileShader(GL_FRAGMENT_SHADER, fragment_source);
@@ -150,7 +150,7 @@ namespace Graphics
       return program;
    }
 
-   GLuint createComputeShader(const char* compute_source)
+   GLuint createComputeShader(const char *compute_source)
    {
       GLuint cs = compileShader(GL_COMPUTE_SHADER, compute_source);
 
@@ -164,7 +164,7 @@ namespace Graphics
       return program;
    }
 
-   std::string slurp(const char* filepath)
+   std::string slurp(const char *filepath)
    {
       std::ifstream ifs(filepath);
       if (!ifs.is_open())
@@ -174,7 +174,7 @@ namespace Graphics
       return oss.str();
    }
 
-   GLuint compileShader(GLenum type, const char* source)
+   GLuint compileShader(GLenum type, const char *source)
    {
       GL_CALL(GLuint id = glCreateShader(type));
       GL_CALL(glShaderSource(id, 1, &source, NULL));
@@ -238,7 +238,7 @@ namespace Graphics
          GL_CALL(glGetActiveUniform (program, i, 255, NULL, &size, &type, name));
          GL_CALL(GLint location = glGetUniformLocation (program, name));
 
-         for (int j = 0; j < sizeof (type_set) / sizeof (glsl_type_set); j++) {
+         for (size_t j = 0; j < sizeof(type_set) / sizeof(glsl_type_set); j++) {
             if (type_set [j].type != type)
                continue;
 

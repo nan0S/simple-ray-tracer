@@ -119,11 +119,11 @@ int main(int argc, char* argv[])
 {
    if (argc != 2)
       ERROR("Wrong number of arguemnts.");
+   const char* config_file_path = argv[1];
 
    /* Parse configuration. */
    Config config;
    {
-      const char* config_file_path = argv[1];
       std::ifstream config_file(config_file_path);
       if (!config_file.is_open())
          ERROR("Failed to open a file.");
@@ -428,6 +428,8 @@ int main(int argc, char* argv[])
    window_context.clip_dist_max = dist_bound * CLIP_DIST_MAX_FACTOR;
    windowResizeCallback(window, WINDOW_WIDTH, WINDOW_HEIGHT);
 
+   int last_state = GLFW_RELEASE;
+
    /* Main loop. */
    while (!glfwWindowShouldClose(window))
    {
@@ -449,7 +451,7 @@ int main(int argc, char* argv[])
          last_xpos = xpos;
          last_ypos = ypos;
       }
-      /* Calculate keyboard movement. */
+      /* Calculate keyboard input. */
       {
          glm::vec3 delta_pos(0);
          if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
@@ -476,6 +478,34 @@ int main(int argc, char* argv[])
          glm::mat4 view = glm::lookAt(position, position + forward, visual_up);
          glm::mat4 mvp = window_context.projection * view;
          GL_CALL(glUniformMatrix4fv(mvp_loc, 1, GL_FALSE, &mvp[0][0]));
+      }
+      /* Respond to other commands. */
+      {
+         int state = glfwGetKey(window, GLFW_KEY_U);
+         // Update configuration.
+         if (last_state == GLFW_RELEASE && state == GLFW_PRESS)
+         {
+            std::ofstream out(config_file_path);
+            glm::vec3 la = position + forward;
+            out << config.comment << '\n';
+            out << config.obj_file_path << '\n';
+            out << config.output_file_path << '\n';
+            out << config.k << '\n';
+            out << config.xres << ' ' << config.yres << '\n';
+            out << position.x << ' ' << position.y << ' ' << position.z << '\n';
+            out << la.x << ' ' << la.y << ' ' << la.z << '\n';
+            out << config.up.x << ' ' << config.up.y << ' ' << config.up.z << '\n';
+            out << config.yview << '\n';
+            for (Light &l : config.lights)
+            {
+               glm::ivec3 color(l.color.x * 255, l.color.y * 255, l.color.z * 255);
+               out << "L " << l.position.x << ' ' << l.position.y << ' ' << l.position.z << ' ';
+               out << color.x << ' ' << color.y << ' ' << color.z << ' ';
+               out << l.intensity * 100 << '\n';
+            }
+            print("Configuration updated.");
+         }
+         last_state = state;
       }
 
       GL_CALL(glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT));

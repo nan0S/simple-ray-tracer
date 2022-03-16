@@ -1,0 +1,11 @@
+# Scene with trees with lots of triangles.
+models/tree/Tree1.obj
+tree.png
+0
+600 400
+-37.248 10.7207 -2.35722
+-36.2542 10.6144 -2.32344
+0 1 0
+1
+L 0 10 10 255 255 0 30
+L 10 10 0 0 255 255 30

@@ -67,14 +67,6 @@ struct RayTracerData
    std::vector<MeshData> mesh_data;
 };
 
-struct Mesh
-{
-   std::vector<glm::vec3> vertices;
-   std::vector<glm::vec3> normals;
-   std::vector<uint> indices;
-   MeshData mesh_data;
-};
-
 struct RenderData
 {
    std::vector<glm::vec3> vertices;

@@ -107,6 +107,25 @@ std::ostream& operator<<(std::ostream& out, const aiVector3D& v)
    return out << '[' << v.x << ',' << v.y << ',' << v.z << ']';
 }
 
+static const char* USAGE_STR =
+"Usage: ./raytracer CONFIG_FILE\n\n"
+"Confiration file template:\n\n"
+"comment\n"
+"path/to/file.obj\n"
+"path/to/file.png\n"
+"k_parameter\n"
+"x_resolution y_resolution\n"
+"view_point_x view_point_y view_point_z\n"
+"look_at_x look_at_y look_at_z\n"
+"[up_x up_y up_z] (default=[0,1,0])\n"
+"[yview] (default=1)\n"
+"[L light_pos_x light_pos_y light_pos_y light_col_x light_col_y intensity]...";
+
+static const char* INSTRUCTION_STR =
+"Ues WASD to move, mouse to look around.\n"
+"Press U to update the current configuration.\n"
+"Press ESCAPE/Q to quit.";
+
 static constexpr int WINDOW_WIDTH = 1280;
 static constexpr int WINDOW_HEIGHT = 720;
 static constexpr float FOV = 60;
@@ -118,7 +137,7 @@ static constexpr float LOOK_SENSITIVITY = 0.5f;
 int main(int argc, char* argv[])
 {
    if (argc != 2)
-      ERROR("Wrong number of arguemnts.");
+      ERROR(USAGE_STR);
    const char* config_file_path = argv[1];
 
    /* Parse configuration. */
@@ -126,7 +145,7 @@ int main(int argc, char* argv[])
    {
       std::ifstream config_file(config_file_path);
       if (!config_file.is_open())
-         ERROR("Failed to open a file.");
+         ERROR("Failed to open configuration file.");
 
       config.up = glm::vec3(0, 1, 0);
       config.yview = 1;
@@ -429,6 +448,8 @@ int main(int argc, char* argv[])
    windowResizeCallback(window, WINDOW_WIDTH, WINDOW_HEIGHT);
 
    int last_state = GLFW_RELEASE;
+
+   print(INSTRUCTION_STR);
 
    /* Main loop. */
    while (!glfwWindowShouldClose(window))

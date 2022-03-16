@@ -1,0 +1,23 @@
+# Created by A.Łukaszewski IV.2016 for testing view angles
+# for RGK lecture lab tests
+
+newmtl red
+	Ns 10.0000
+	Ni 1.5000
+	illum 2
+   Ka 0 0 0
+   # Ka 0.50 0.50 0.00
+	Kd 0.90 0.00 0.00
+	Ks 0.2000 0.2000 0.2000
+	Ke 0.0000 0.0000 0.0000
+
+newmtl blue
+	Ns 10.0000
+	Ni 1.5000
+	illum 2
+	# Ka 0.00 0.50 0.50
+	Kd 0.00 0.00 0.50
+	Ks 0.2000 0.2000 0.2000
+	Ke 0.0000 0.0000 0.0000
+
+

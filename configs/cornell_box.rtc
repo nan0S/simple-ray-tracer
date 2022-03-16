@@ -1,0 +1,11 @@
+# OBJ_FILE, PNG_OUTPUT_FILE, K, XRES x YRES, VP, LA, [UP, YVIEW, [LIGHTS...]]
+models/cornell_box/cornell_box.obj
+cornell_box.png
+0
+1280 720
+250 250 -250
+250 200 0
+0 1 0
+1
+L 0 10 10 255 255 0 100.0
+L 10 10 0 0 255 255 50.0

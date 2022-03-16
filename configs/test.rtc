@@ -1,0 +1,11 @@
+OBJ_FILE, PNG_OUTPUT_FILE, K, XRES x YRES, VP, LA, [UP, YVIEW, [LIGHTS...]]
+models/tree/Tree1.obj
+cornell_box.png
+0
+1280 720
+0 0 -1
+0 0 0
+0 1 0
+1
+0 10 10 255 255 0 100.0
+10 10 0 0 255 255 50.0

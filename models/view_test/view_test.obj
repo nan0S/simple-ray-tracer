@@ -1,0 +1,28 @@
+# Created by A.Łukaszewski IV.2016 for testing view angles
+# for RGK lecture lab tests
+
+mtllib view_test.mtl
+
+v -1.0 -1.0  0.0
+v  0.0 -1.0  0.0
+v  1.0 -1.0  0.0
+v -1.0  0.0  0.0
+v  0.0  0.0  0.0
+v  1.0  0.0  0.0
+v -1.0  1.0  0.0
+v  0.0  1.0  0.0
+v  1.0  1.0  0.0
+
+vn 0.0000 0.0000 1.0000
+
+g checkerboard
+usemtl red
+s 1
+f 1//1 2//1 4//1
+f 4//1 2//1 5//1
+# 2 faces
+
+usemtl blue
+s 1
+f 5//1 6//1 8//1
+f 8//1 6//1 9//1

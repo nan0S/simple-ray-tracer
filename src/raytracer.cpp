@@ -102,7 +102,7 @@ static const char *USAGE_STR =
 static const char *INSTRUCTION_STR =
 "Use WASD to move, MOUSE to look around.\n"
 "Press U to update the current configuration.\n"
-"Press LEFT MOUSE BUTTON to print the current position (useful for chaning script manually).\n"
+"Press LEFT MOUSE BUTTON to print the current position (useful for changing script manually).\n"
 "Press ESCAPE/Q to quit.";
 
 static constexpr int WINDOW_WIDTH = 1280;
@@ -110,7 +110,7 @@ static constexpr int WINDOW_HEIGHT = 720;
 static constexpr float CLIP_DIST_MIN_FACTOR = 0.0001f;
 static constexpr float CLIP_DIST_MAX_FACTOR = 20;
 static constexpr float MOVEMENT_SPEED_FACTOR = 0.45f;
-static constexpr float LOOK_SENSITIVITY = 0.3f;
+static constexpr float LOOK_SENSITIVITY = 0.15f;
 
 int main(int argc, char *argv[])
 {
@@ -418,6 +418,7 @@ int main(int argc, char *argv[])
    glm::vec3 up = glm::normalize(config.up);
    glm::vec3 right = glm::cross(up, forward);
 
+   float vert_rotation = 0;
    double last_xpos, last_ypos;
    glfwGetCursorPos(window, &last_xpos, &last_ypos);
 
@@ -446,10 +447,13 @@ int main(int argc, char *argv[])
       /* Calculate mouse movement. */
       float delta_hor, delta_vert;
       {
+         static constexpr float pi_2 = static_cast<float>(M_PI_2);
          double xpos, ypos;
          glfwGetCursorPos(window, &xpos, &ypos);
          delta_hor = delta_time * LOOK_SENSITIVITY * static_cast<float>(xpos - last_xpos);
          delta_vert = delta_time * LOOK_SENSITIVITY * static_cast<float>(ypos - last_ypos);
+         delta_vert = glm::clamp<float>(vert_rotation + delta_vert, -pi_2, pi_2) - vert_rotation;
+         vert_rotation += delta_vert;
          last_xpos = xpos;
          last_ypos = ypos;
       }

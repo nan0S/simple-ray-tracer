@@ -402,8 +402,6 @@ int main(int argc, char *argv[])
             GL_CALL(glUniform1f(intensity_loc, light.intensity));
          }
       }
-      GL_CALL(GLint dist_bound_loc = glGetUniformLocation(shader, "dist_bound"));
-      GL_CALL(glUniform1f(dist_bound_loc, dist_bound));
       GL_CALL(GLint specular_pow_factor_loc = glGetUniformLocation(shader, "specular_pow_factor"));
       GL_CALL(glUniform1f(specular_pow_factor_loc, SPECULAR_POW_FACTOR));
       GL_CALL(GLint A_loc = glGetUniformLocation(shader, "A"));
@@ -427,8 +425,6 @@ int main(int argc, char *argv[])
       float x = sqrtf(config.xres * config.xres + config.yres * config.yres);
       window_context.fov = 2 * std::atan(0.5f * x / focal_length);
       windowResizeCallback(window, config.xres, config.yres);
-      rayTrace(&rtdata, config.xres, config.yres, focal_length,
-               position, forward, right, config.k, buffer);
    }
 
    float vert_rotation = 0;
@@ -532,7 +528,7 @@ int main(int argc, char *argv[])
          {
             int left_state = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT);
             if (left_last_state == GLFW_RELEASE && left_state == GLFW_PRESS)
-               print(position);
+               print(dist_bound * position);
             left_last_state = left_state;
          }
       }

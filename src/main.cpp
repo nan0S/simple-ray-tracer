@@ -418,7 +418,7 @@ int main(int argc, char *argv[])
    glm::vec3 forward = glm::normalize(config.la - position);
    glm::vec3 up = glm::normalize(config.up);
    glm::vec3 right = glm::cross(forward, up);
-   glm::vec3 buffer[config.xres * config.yres];
+   glm::vec3 *buffer = new glm::vec3[config.xres * config.yres];
 
    float focal_length;
    {
@@ -552,6 +552,8 @@ int main(int argc, char *argv[])
    stbi_write_jpg(out_filepath.c_str(),
                   config.xres, config.yres, 3,
                   img, 3 * config.xres);
+
+   // No cleanup, because app exists anyway.
 
    return 0;
 }

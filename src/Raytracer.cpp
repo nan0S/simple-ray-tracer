@@ -3,64 +3,100 @@
 #include "Utils/Timer.h"
 #include "Const.h"
 
-void rayTrace(RayTracerData *rtdata, int xres, int yres, float focal_length,
-              glm::vec3 origin, glm::vec3 forward, glm::vec3 right,
-              float dist_bound, int k, glm::vec3 *output)
+static col3 rayTrace(Ray ray, RayTracerData *rtdata, int depth);
+
+// #define TEST_CULL
+
+int rayTriangleIntersection(const Ray &ray, const Triangle &tri, real *t)
+{
+   vec3 pvec = glm::cross(ray.d, tri.bar.v);
+   real det = glm::dot(tri.bar.u, pvec);
+#ifdef TEST_CULL
+   if (det < EPSILON)
+      return 0;
+   vec3 tvec = ray.o - tri.bar.P;
+   real u = glm::dot(tvec, pvec);
+   if (u < 0 || u > det)
+      return 0;
+   vec3 qvec = glm::cross(tvec, tri.bar.u);
+   real v = glm::dot(ray.d, qvec);
+   if (v < 0 || u + v > det)
+      return 0;
+   *t = glm::dot(tri.bar.v, qvec);
+   *t /= det;
+#else
+   if (det > -EPS && det < EPS)
+     return 0;
+   real inv_det = 1 / det;
+   vec3 tvec = ray.o - tri.bar.P;
+   real u = glm::dot(tvec, pvec) * inv_det;
+   if (u < 0 || u > 1)
+     return 0;
+   vec3 qvec = glm::cross(tvec, tri.bar.u);
+   real v = glm::dot(ray.d, qvec) * inv_det;
+   if (v < 0 || u + v > 1)
+     return 0;
+   *t = glm::dot(tri.bar.v, qvec) * inv_det;
+#endif
+   return 1;
+}
+
+void rayTrace(RayTracerData *rtdata, int xres, int yres, real focal_length,
+              vec3 origin, vec3 forward, vec3 right, int k, col3 *output)
 {
    Timer timer("Ray Tracing");
 
-   glm::vec3 up = glm::cross(forward, right);
-   glm::vec3 dir = focal_length * forward;
-   float inv_dist_bound = 1 / dist_bound;
+   vec3 up = glm::cross(forward, right);
+   vec3 dir = focal_length * forward;
    
-   float y = -(yres - 1);
+   real y = -(yres - 1);
    for (int i = 0; i < yres; ++i)
    {
-      float x = -(xres - 1);
+      real x = -(xres - 1);
       for (int j = 0; j < xres; ++j)
       {
-         glm::vec3 d = glm::normalize(dir + x * right + y * up);
+         vec3 d = glm::normalize(dir + x * right + y * up);
          Ray ray { .o = origin, .d = d };
-         output[i * xres + j] = rayTrace(ray, rtdata, inv_dist_bound, k);
+         output[i * xres + j] = rayTrace(ray, rtdata, k);
          x += 2;
       }
       y += 2;
    }
 }
 
-glm::vec3 rayTrace(Ray ray, RayTracerData *rtdata, float inv_dist_bound, int depth)
+col3 rayTrace(Ray ray, RayTracerData *rtdata, int depth)
 {
    if (depth == 0)
-      return glm::vec3(0);
+      return col3(0);
 
    size_t len = rtdata->tris.size(), ck = -1;
-   float ct = std::numeric_limits<float>::infinity();
+   real ct = std::numeric_limits<real>::infinity();
    for (size_t k = 0; k < len; ++k)
    {
-      float t;
-      if (rayTriangleIntersection(ray, rtdata->tris[k], &t) && t >= 0.01 && t < ct)
+      real t;
+      if (rayTriangleIntersection(ray, rtdata->tris[k], &t) && t > EPS && t < ct)
          ct = t, ck = k;
    }
 
    if (ck == static_cast<size_t>(-1))
-      return glm::vec3(0);
+      return col3(0);
 
-   glm::vec3 cp = ray.o + ct * ray.d;
-   glm::vec3 n = rtdata->normals[ck];
-   glm::vec3 r = glm::reflect(ray.d, n);
-   const MeshData &mdata = rtdata->mesh_data[rtdata->mesh_indices[ck]];
-   glm::vec3 diffuse(0), specular(0);
+   vec3 cp = ray.o + ct * ray.d;
+   vec3 n = rtdata->normals[ck];
+   vec3 r = glm::reflect(ray.d, n);
+   const Material &mdata = rtdata->materials[rtdata->mat_indices[ck]];
+   col3 diffuse(0), specular(0);
 
    for (const Light& light : rtdata->lights)
    {
-      glm::vec3 l = light.position - cp;
+      vec3 l = light.position - cp;
       Ray lr = { .o = cp, .d = l };
       bool block = false;
 
       for (size_t k = 0; k < len; ++k)
       {
-         float t;
-         if (rayTriangleIntersection(lr, rtdata->tris[k], &t) && t > 0.01 && t < 0.99)
+         real t;
+         if (rayTriangleIntersection(lr, rtdata->tris[k], &t) && t > EPS && t < 1-EPS)
          {
             block = true;
             break;
@@ -69,18 +105,17 @@ glm::vec3 rayTrace(Ray ray, RayTracerData *rtdata, float inv_dist_bound, int dep
       if (block)
          continue;
 
-      float d = glm::length(l);
+      real d = glm::length(l);
       l /= d;
-      d *= inv_dist_bound;
-      float diff = glm::max(glm::dot(l, n), 0.f);
+      float diff = glm::max(glm::dot(l, n), real(0));
       float d_coeff = 1 / (A*d*d + B*d + C);
-      glm::vec3 coeff = d_coeff * light.intensity * light.color;
-      diffuse += coeff * diff;
-      float spec = glm::pow(glm::max(glm::dot(r, l), 0.f), SPECULAR_POW_FACTOR);
-      specular += coeff * spec;
+      col3 coeff = d_coeff * light.intensity * light.color;
+      diffuse += diff * coeff;
+      float spec = glm::pow(glm::max(glm::dot(r, l), real(0)), SPECULAR_POW_FACTOR);
+      specular += spec * coeff;
    }
 
-   Ray nray = { .o = cp, .d = glm::normalize(r) };
+   Ray nray = { .o = cp, .d = r };
    return mdata.ka + diffuse * mdata.kd + specular * mdata.ks
-      + 0.1f * mdata.ks * rayTrace(nray, rtdata, inv_dist_bound, depth - 1);
+      + 0.1f * mdata.ks * rayTrace(nray, rtdata, depth - 1);
 }

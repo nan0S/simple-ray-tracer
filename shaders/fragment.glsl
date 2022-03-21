@@ -18,7 +18,6 @@ out vec4 o_Color;
 uniform vec3 vp;
 uniform int light_count;
 uniform Light lights[20];
-uniform float dist_bound;
 uniform float specular_pow_factor;
 uniform float A, B, C; // distance coefficients in Phong model (A*x^2+B*x+C)
 
@@ -31,7 +30,7 @@ void main()
       Light light = lights[i];
       vec3 l = light.position - f_Position;
       float d = length(l);
-      l /= d; d /= dist_bound;
+      l /= d;
       float diff = max(dot(l, f_Normal), 0);
       vec3 r = reflect(-l, f_Normal);
       float spec = pow(max(dot(r, view_dir), 0), specular_pow_factor);

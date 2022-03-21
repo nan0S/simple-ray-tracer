@@ -1,35 +1,61 @@
 #pragma once
 
+#include <glm/glm.hpp>
+
 #include <vector>
 
-#include "Math.h"
+#define EPS 0.000001
 
 using uint = unsigned int;
+using real = double;
+using col3 = glm::vec3;
+using vec3 = glm::vec<3, real>;
 
-struct MeshData
+struct BarycentricTriangle
 {
-   glm::vec3 ka;
-   glm::vec3 kd;
-   glm::vec3 ks;
+   vec3 P;
+   vec3 u;
+   vec3 v;
+};
+
+struct Triangle
+{
+   union
+   {
+      BarycentricTriangle bar;
+      vec3 p[3];
+   };
+};
+
+struct Material
+{
+   col3 ka;
+   col3 kd;
+   col3 ks;
 };
 
 struct Light
 {
-   glm::vec3 position;
-   glm::vec3 color;
+   vec3 position;
+   col3 color;
    float intensity;
+};
+
+struct Ray
+{
+   vec3 o;
+   vec3 d;
 };
 
 struct RayTracerData
 {
    std::vector<Triangle> tris;
-   std::vector<glm::vec3> normals;
-   std::vector<uint> mesh_indices;
-   std::vector<MeshData> mesh_data;
+   std::vector<vec3> normals;
+   std::vector<uint> mat_indices;
+   std::vector<Material> materials;
    std::vector<Light> lights;
 };
 
-void rayTrace(RayTracerData *rtdata, int xres, int yres, float focal_length,
-              glm::vec3 origin, glm::vec3 forward, glm::vec3 right,
-              float dist_bound, int k, glm::vec3 *output);
-glm::vec3 rayTrace(Ray ray, RayTracerData *rtdata, float inv_dist_bound, int depth);
+int rayTriangleIntersection(const Ray &ray, const Triangle &tri, real *t);
+void rayTrace(RayTracerData *rtdata, int xres, int yres, real focal_length,
+              vec3 origin, vec3 forward, vec3 right, int k, col3 *output);

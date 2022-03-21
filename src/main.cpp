@@ -38,8 +38,6 @@ struct Config
 struct WindowContext
 {
    glm::mat4 projection;
-   float clip_dist_min;
-   float clip_dist_max;
    float fov;
 };
 
@@ -47,9 +45,9 @@ struct RenderData
 {
    std::vector<glm::vec3> vertices;
    std::vector<glm::vec3> normals;
-   std::vector<glm::vec3> kas;
-   std::vector<glm::vec3> kds;
-   std::vector<glm::vec3> kss;
+   std::vector<col3> kas;
+   std::vector<col3> kds;
+   std::vector<col3> kss;
    std::vector<uint> indices;
 };
 
@@ -57,8 +55,8 @@ static void glfwErrorCallback(int code, const char *desc);
 static void windowResizeCallback(GLFWwindow*, int width, int height);
 static void keyInputCallback(GLFWwindow* window, int key, int, int action, int);
 
-template<class T> std::ostream& operator<<(std::ostream &out, const glm::vec<3, T> &v);
 template<class T> std::istream& operator>>(std::istream &in, glm::vec<3, T> &v);
+template<class T> std::ostream& operator<<(std::ostream &out, const glm::vec<3, T> &v);
 
 static const char *USAGE_STR =
 "Usage: ./raytracer CONFIG_FILE\n\n"
@@ -80,9 +78,9 @@ static const char *INSTRUCTION_STR =
 "Press LEFT MOUSE BUTTON to print the current position (useful for changing script manually).\n"
 "Press ESCAPE/Q to quit.";
 
-static constexpr float CLIP_DIST_MIN_FACTOR = 0.0001f;
-static constexpr float CLIP_DIST_MAX_FACTOR = 20;
-static constexpr float MOVEMENT_SPEED_FACTOR = 0.45f;
+static constexpr float CLIP_DIST_MIN = 0.0001f;
+static constexpr float CLIP_DIST_MAX = 20;
+static constexpr float MOVEMENT_SPEED = 0.6f;
 static constexpr float LOOK_SENSITIVITY = 0.15f;
 
 int main(int argc, char *argv[])
@@ -198,18 +196,38 @@ int main(int argc, char *argv[])
          if (!scene)
             ERROR(importer.GetErrorString());
 
+         // Precalculate some values from objects in the scene.
          uint n_tris = 0, n_vertices = 0;
-         for (uint i = 0; i < scene->mNumMeshes; ++i)
          {
-            const aiMesh *mesh = scene->mMeshes[i];
-            n_tris += mesh->mNumFaces;
-            n_vertices += mesh->mNumVertices;
+            constexpr float inf = std::numeric_limits<float>::infinity();
+            glm::vec3 min_point(inf);
+            glm::vec3 max_point(-inf);
+            for (uint i = 0; i < scene->mNumMeshes; ++i)
+            {
+               const aiMesh *mesh = scene->mMeshes[i];
+               const aiVector3D *verts = mesh->mVertices;
+
+               n_tris += mesh->mNumFaces;
+               n_vertices += mesh->mNumVertices;
+
+               for (uint j = 0; j < mesh->mNumVertices; ++j)
+               {
+                  aiVector3D v = verts[j];
+                  max_point.x = std::max(max_point.x, v.x);
+                  max_point.y = std::max(max_point.y, v.y);
+                  max_point.z = std::max(max_point.z, v.z);
+                  min_point.x = std::min(min_point.x, v.x);
+                  min_point.y = std::min(min_point.y, v.y);
+                  min_point.z = std::min(min_point.z, v.z);
+               }
+            }
+            dist_bound = glm::length(max_point - min_point);
          }
 
          rtdata.tris.reserve(n_tris);
          rtdata.normals.reserve(n_tris);
-         rtdata.mesh_indices.reserve(n_tris);
-         rtdata.mesh_data.reserve(scene->mNumMeshes);
+         rtdata.mat_indices.reserve(n_tris);
+         rtdata.materials.reserve(scene->mNumMeshes);
 
          rdata.vertices.reserve(n_vertices);
          rdata.normals.reserve(n_vertices);
@@ -218,28 +236,38 @@ int main(int argc, char *argv[])
          rdata.kss.reserve(n_vertices);
          rdata.indices.reserve(n_tris * 3);
 
+
          uint index_offset = 0;
-         constexpr float inf = std::numeric_limits<float>::infinity();
-         glm::vec3 min_point(inf, inf, inf);
-         glm::vec3 max_point(-inf, -inf, -inf);
          for (uint i = 0; i < scene->mNumMeshes; ++i)
          {
             const aiMesh *mesh = scene->mMeshes[i];
-            const aiVector3D *verts = mesh->mVertices;
-            const aiVector3D *normals = mesh->mNormals;
             const aiMaterial *mat = scene->mMaterials[mesh->mMaterialIndex];
+            aiVector3D *verts = mesh->mVertices;
+            aiVector3D *normals = mesh->mNormals;
 
             aiColor3D ka, kd, ks;
             mat->Get(AI_MATKEY_COLOR_AMBIENT, ka);
             mat->Get(AI_MATKEY_COLOR_DIFFUSE, kd);
             mat->Get(AI_MATKEY_COLOR_SPECULAR, ks);
 
-            MeshData mesh_data {
-               glm::vec3(ka.r, ka.g, ka.b),
-               glm::vec3(kd.r, kd.g, kd.b),
-               glm::vec3(ks.r, ks.g, ks.b)
+            Material material {
+               col3(ka.r, ka.g, ka.b),
+               col3(kd.r, kd.g, kd.b),
+               col3(ks.r, ks.g, ks.b)
             };
-            rtdata.mesh_data.push_back(mesh_data);
+            rtdata.materials.push_back(material);
+
+            for (uint j = 0; j < mesh->mNumVertices; ++j)
+            {
+               const aiVector3D& v = (verts[j] /= dist_bound);
+               const aiVector3D& n = normals[j];
+
+               rdata.vertices.push_back(glm::vec3(v.x, v.y, v.z));
+               rdata.normals.push_back(glm::vec3(n.x, n.y, n.z));
+               rdata.kas.push_back(material.ka);
+               rdata.kds.push_back(material.kd);
+               rdata.kss.push_back(material.ks);
+            }
 
             for (uint j = 0; j < mesh->mNumFaces; ++j)
             {
@@ -250,43 +278,28 @@ int main(int argc, char *argv[])
                for (uint k = 0; k < face.mNumIndices; ++k)
                {
                   uint idx = face.mIndices[k];
-                  tri.p[k] = glm::vec3(verts[idx].x, verts[idx].y, verts[idx].z);
+                  tri.p[k] = vec3(verts[idx].x, verts[idx].y, verts[idx].z);
                   rdata.indices.push_back(index_offset + idx);
                }
                tri.bar.u -= tri.bar.P;
                tri.bar.v -= tri.bar.P;
                {
                   uint idx = face.mIndices[0];
-                  rtdata.normals.push_back(glm::vec3(normals[idx].x,
-                                                     normals[idx].y,
-                                                     normals[idx].z));
+                  rtdata.normals.push_back(vec3(normals[idx].x,
+                                                normals[idx].y,
+                                                normals[idx].z));
                }
-               rtdata.mesh_indices.push_back(i);
-            }
-
-            for (uint j = 0; j < mesh->mNumVertices; ++j)
-            {
-               aiVector3D vertex = verts[j];
-               aiVector3D normal = normals[j];
-
-               rdata.vertices.push_back(glm::vec3(vertex.x, vertex.y, vertex.z));
-               rdata.normals.push_back(glm::vec3(normal.x, normal.y, normal.z));
-               rdata.kas.push_back(mesh_data.ka);
-               rdata.kds.push_back(mesh_data.kd);
-               rdata.kss.push_back(mesh_data.ks);
-
-               max_point.x = std::max(max_point.x, vertex.x);
-               max_point.y = std::max(max_point.y, vertex.y);
-               max_point.z = std::max(max_point.z, vertex.z);
-               min_point.x = std::min(min_point.x, vertex.x);
-               min_point.y = std::min(min_point.y, vertex.y);
-               min_point.z = std::min(min_point.z, vertex.z);
+               rtdata.mat_indices.push_back(i);
             }
 
             index_offset += mesh->mNumVertices;
          }
 
-         dist_bound = glm::length(max_point - min_point);
+         // Normalize all the other points in the scene.
+         for (Light &light : rtdata.lights)
+            light.position /= dist_bound;
+         config.vp /= dist_bound;
+         config.la /= dist_bound;
       }
 
       /* Setup OpenGL buffers. */
@@ -319,7 +332,7 @@ int main(int argc, char *argv[])
          GL_CALL(glGenBuffers(1, &kavbo));
          GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, kavbo));
          GL_CALL(glBufferData(GL_ARRAY_BUFFER,
-                              rdata.kas.size() * sizeof(glm::vec3),
+                              rdata.kas.size() * sizeof(col3),
                               rdata.kas.data(),
                               GL_STATIC_DRAW));
          GL_CALL(glEnableVertexAttribArray(2));
@@ -329,7 +342,7 @@ int main(int argc, char *argv[])
          GL_CALL(glGenBuffers(1, &kdvbo));
          GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, kdvbo));
          GL_CALL(glBufferData(GL_ARRAY_BUFFER,
-                              rdata.kds.size() * sizeof(glm::vec3),
+                              rdata.kds.size() * sizeof(col3),
                               rdata.kds.data(),
                               GL_STATIC_DRAW));
          GL_CALL(glEnableVertexAttribArray(3));
@@ -339,7 +352,7 @@ int main(int argc, char *argv[])
          GL_CALL(glGenBuffers(1, &ksvbo));
          GL_CALL(glBindBuffer(GL_ARRAY_BUFFER, ksvbo));
          GL_CALL(glBufferData(GL_ARRAY_BUFFER,
-                              rdata.kss.size() * sizeof(glm::vec3),
+                              rdata.kss.size() * sizeof(col3),
                               rdata.kss.data(),
                               GL_STATIC_DRAW));
          GL_CALL(glEnableVertexAttribArray(4));
@@ -400,23 +413,21 @@ int main(int argc, char *argv[])
       GL_CALL(glUniform1f(C_loc, C));
    }
 
+   /* Setup runtime variables. */
    glm::vec3 position = config.vp;
    glm::vec3 forward = glm::normalize(config.la - position);
    glm::vec3 up = glm::normalize(config.up);
    glm::vec3 right = glm::cross(forward, up);
    glm::vec3 buffer[config.xres * config.yres];
 
-   float movement_speed, focal_length;
+   float focal_length;
    {
       focal_length = config.yres / config.yview;
-      movement_speed = dist_bound * MOVEMENT_SPEED_FACTOR;
-      window_context.clip_dist_min = dist_bound * CLIP_DIST_MIN_FACTOR;
-      window_context.clip_dist_max = dist_bound * CLIP_DIST_MAX_FACTOR;
       float x = sqrtf(config.xres * config.xres + config.yres * config.yres);
       window_context.fov = 2 * std::atan(0.5f * x / focal_length);
       windowResizeCallback(window, config.xres, config.yres);
       rayTrace(&rtdata, config.xres, config.yres, focal_length,
-               position, forward, right, dist_bound, config.k, buffer);
+               position, forward, right, config.k, buffer);
    }
 
    float vert_rotation = 0;
@@ -467,7 +478,7 @@ int main(int argc, char *argv[])
             delta_pos += up;
          if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS)
             delta_pos -= up;
-         position += (delta_time * movement_speed) * delta_pos;
+         position += (delta_time * MOVEMENT_SPEED) * delta_pos;
          GL_CALL(glUniform3f(vp_loc, position.x, position.y, position.z));
       }
       /* Update camera view. */
@@ -487,7 +498,7 @@ int main(int argc, char *argv[])
             int r_state = glfwGetKey(window, GLFW_KEY_R);
             if (r_last_state == GLFW_RELEASE && r_state == GLFW_PRESS)
                rayTrace(&rtdata, config.xres, config.yres, focal_length,
-                        position, forward, right, dist_bound, config.k, buffer);
+                        position, forward, right, config.k, buffer);
             r_last_state = r_state;
          }
          /* Update configuration. */
@@ -502,15 +513,15 @@ int main(int argc, char *argv[])
                out << config.output_file_path << '\n';
                out << config.k << '\n';
                out << config.xres << ' ' << config.yres << '\n';
-               out << position.x << ' ' << position.y << ' ' << position.z << '\n';
-               out << la.x << ' ' << la.y << ' ' << la.z << '\n';
-               out << config.up.x << ' ' << config.up.y << ' ' << config.up.z << '\n';
+               out << dist_bound * position << '\n';
+               out << dist_bound * la << '\n';
+               out << config.up << '\n';
                out << config.yview << '\n';
                for (Light &l : rtdata.lights)
                {
                   glm::ivec3 color(l.color.x * 255, l.color.y * 255, l.color.z * 255);
-                  out << "L " << l.position.x << ' ' << l.position.y << ' ' << l.position.z << ' ';
-                  out << color.x << ' ' << color.y << ' ' << color.z << ' ';
+                  out << "L " << real(dist_bound) * l.position << ' ';
+                  out << color << ' ';
                   out << l.intensity * 100 << '\n';
                }
                print("Configuration updated.");
@@ -538,7 +549,7 @@ int main(int argc, char *argv[])
       for (int j = 0; j < config.xres; ++j)
       {
          int idx = i * config.xres + j;
-         img[idx] = 255.f * glm::min(buffer[idx], glm::vec3(1));
+         img[idx] = 256.f * glm::min(buffer[idx], col3(1-EPS));
       }
    std::string out_filepath = config.output_file_path + ".jpg";
    stbi_write_jpg(out_filepath.c_str(),
@@ -557,7 +568,7 @@ void windowResizeCallback(GLFWwindow* window, int width, int height)
 {
    WindowContext* ctx = (WindowContext*)glfwGetWindowUserPointer(window);
    float aspect = static_cast<float>(width) / static_cast<float>(height);
-   ctx->projection = glm::perspective(ctx->fov, aspect, ctx->clip_dist_min, ctx->clip_dist_max);
+   ctx->projection = glm::perspective(ctx->fov, aspect, CLIP_DIST_MIN, CLIP_DIST_MAX);
    GL_CALL(glViewport(0, 0, width, height));
 }
 

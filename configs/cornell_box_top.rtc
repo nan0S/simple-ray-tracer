@@ -1,0 +1,10 @@
+# Classic scene.
+models/cornell_box/cornell_box.obj
+renders/cornell_box_top
+4
+1920 1080
+277.233 339.304 -614.577
+305.581 266.646 342.992
+0 1 0
+0.5
+L 270 499 250 255 255 255 100

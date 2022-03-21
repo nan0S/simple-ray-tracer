@@ -7,7 +7,7 @@
 #define EPS 0.000001
 
 using uint = unsigned int;
-using real = double;
+using real = float;
 using col3 = glm::vec3;
 using vec3 = glm::vec<3, real>;
 

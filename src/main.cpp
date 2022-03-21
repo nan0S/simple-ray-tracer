@@ -182,6 +182,7 @@ int main(int argc, char *argv[])
    GL_CALL(glClear(GL_COLOR_BUFFER_BIT));
    glfwSwapBuffers(window);
    GL_CALL(glEnable(GL_DEPTH_TEST));
+   GL_CALL(glEnable(GL_CULL_FACE));
 
    /* Load assets. */
    int indices_count;
@@ -453,12 +454,11 @@ int main(int argc, char *argv[])
       /* Calculate rotation. */
       float delta_hor, delta_vert;
       {
-         static constexpr float pi_2 = static_cast<float>(M_PI_2);
          double xpos, ypos;
          glfwGetCursorPos(window, &xpos, &ypos);
          delta_hor = delta_time * LOOK_SENSITIVITY * static_cast<float>(last_xpos - xpos);
          delta_vert = delta_time * LOOK_SENSITIVITY * static_cast<float>(last_ypos - ypos);
-         delta_vert = glm::clamp<float>(vert_rotation + delta_vert, -pi_2, pi_2) - vert_rotation;
+         delta_vert = glm::clamp<float>(vert_rotation + delta_vert, -M_PI_2, M_PI_2) - vert_rotation;
          vert_rotation += delta_vert;
          last_xpos = xpos;
          last_ypos = ypos;

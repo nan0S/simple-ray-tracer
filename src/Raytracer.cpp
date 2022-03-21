@@ -3,16 +3,18 @@
 #include "Utils/Timer.h"
 #include "Const.h"
 
-static col3 rayTrace(Ray ray, RayTracerData *rtdata, int depth);
+#define TEST_CULL
+static constexpr float REFLECT_DAMP_FACTOR = 0.1f;
 
-// #define TEST_CULL
+static col3 rayTrace(const Ray &ray, RayTracerData *rtdata, int depth);
+static size_t firstIntersection(const Ray &ray, RayTracerData *rtdata, real *ct);
 
 int rayTriangleIntersection(const Ray &ray, const Triangle &tri, real *t)
 {
    vec3 pvec = glm::cross(ray.d, tri.bar.v);
    real det = glm::dot(tri.bar.u, pvec);
 #ifdef TEST_CULL
-   if (det < EPSILON)
+   if (det < EPS)
       return 0;
    vec3 tvec = ray.o - tri.bar.P;
    real u = glm::dot(tvec, pvec);
@@ -48,7 +50,7 @@ void rayTrace(RayTracerData *rtdata, int xres, int yres, real focal_length,
 
    vec3 up = glm::cross(forward, right);
    vec3 dir = focal_length * forward;
-   
+
    real y = -(yres - 1);
    for (int i = 0; i < yres; ++i)
    {
@@ -57,30 +59,38 @@ void rayTrace(RayTracerData *rtdata, int xres, int yres, real focal_length,
       {
          vec3 d = glm::normalize(dir + x * right + y * up);
          Ray ray { .o = origin, .d = d };
-         output[i * xres + j] = rayTrace(ray, rtdata, k);
+         col3 &out_color = output[i * xres + j];
+         if (k == 0)
+         {
+            real ct;
+            size_t ck = firstIntersection(ray, rtdata, &ct);
+            if (ck == static_cast<size_t>(-1))
+               out_color = col3(0);
+            else
+            {
+               const Material &mat = rtdata->materials[rtdata->mat_indices[ck]];
+               out_color = mat.ka + mat.kd;
+            }
+         }
+         else
+            out_color = rayTrace(ray, rtdata, k);
          x += 2;
       }
       y += 2;
    }
 }
 
-col3 rayTrace(Ray ray, RayTracerData *rtdata, int depth)
+col3 rayTrace(const Ray &ray, RayTracerData *rtdata, int depth)
 {
    if (depth == 0)
       return col3(0);
 
-   size_t len = rtdata->tris.size(), ck = -1;
-   real ct = std::numeric_limits<real>::infinity();
-   for (size_t k = 0; k < len; ++k)
-   {
-      real t;
-      if (rayTriangleIntersection(ray, rtdata->tris[k], &t) && t > EPS && t < ct)
-         ct = t, ck = k;
-   }
-
+   real ct;
+   size_t ck = firstIntersection(ray, rtdata, &ct);
    if (ck == static_cast<size_t>(-1))
       return col3(0);
 
+   size_t len = rtdata->tris.size();
    vec3 cp = ray.o + ct * ray.d;
    vec3 n = rtdata->normals[ck];
    vec3 r = glm::reflect(ray.d, n);
@@ -96,7 +106,7 @@ col3 rayTrace(Ray ray, RayTracerData *rtdata, int depth)
       for (size_t k = 0; k < len; ++k)
       {
          real t;
-         if (rayTriangleIntersection(lr, rtdata->tris[k], &t) && t > EPS && t < 1-EPS)
+         if (k != ck && rayTriangleIntersection(lr, rtdata->tris[k], &t) && t > EPS && t < 1-EPS)
          {
             block = true;
             break;
@@ -116,6 +126,21 @@ col3 rayTrace(Ray ray, RayTracerData *rtdata, int depth)
    }
 
    Ray nray = { .o = cp, .d = r };
-   return mdata.ka + diffuse * mdata.kd + specular * mdata.ks
-      + 0.1f * mdata.ks * rayTrace(nray, rtdata, depth - 1);
+   col3 color = mdata.ka + diffuse * mdata.kd + specular * mdata.ks;
+   float diff = glm::dot(n, r);
+   col3 rtcolor = REFLECT_DAMP_FACTOR * (diff * mdata.kd + mdata.ks) * rayTrace(nray, rtdata, depth-1);
+   return color + rtcolor;
+}
+
+size_t firstIntersection(const Ray &ray, RayTracerData *rtdata, real *ct)
+{
+   size_t len = rtdata->tris.size(), ck = -1;
+   *ct = std::numeric_limits<real>::infinity();
+   for (size_t k = 0; k < len; ++k)
+   {
+      real t;
+      if (rayTriangleIntersection(ray, rtdata->tris[k], &t) && t > EPS && t < *ct)
+         *ct = t, ck = k;
+   }
+   return ck;
 }

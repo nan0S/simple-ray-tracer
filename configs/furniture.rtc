@@ -1,0 +1,10 @@
+# Scene with some furniture.
+models/furniture/furniture.obj
+renders/furniture
+4
+800 600
+-752.767 1602.72 3552.78
+-752.738 1602.6 3551.79
+0 1 0
+1
+L 10 100 0 255 255 255 100

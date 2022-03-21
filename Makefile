@@ -3,8 +3,8 @@ TARGET := raytracer
 CXX      := g++
 VERSION  := -std=c++20
 CXXFLAGS := $(VERSION) -Wall -Wextra -Wno-missing-field-initializers
-# CXXFLAGS += -DNDEBUG -O3 -Wno-unused-variable # -Ofast -flto -march=native -s
-CXXFLAGS += -O -ggdb -fno-omit-frame-pointer
+CXXFLAGS += -DNDEBUG -O3 -Wno-unused-variable # -Ofast -flto -march=native -s
+# CXXFLAGS += -O -ggdb -fno-omit-frame-pointer
 
 INC := -I./src -I./deps/stb
 LIB := -lGLEW -lGL -lglfw -lGLU -lassimp

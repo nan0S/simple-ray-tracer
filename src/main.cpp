@@ -75,7 +75,8 @@ static const char *USAGE_STR =
 static const char *INSTRUCTION_STR =
 "Use WASD to move, MOUSE to look around.\n"
 "Press U to update the current configuration.\n"
-"Press LEFT MOUSE BUTTON to print the current position (useful for changing script manually).\n"
+"Press R to perform Ray Tracing.\n"
+"Press LEFT MOUSE BUTTON to print the current position (useful for changing scene configuration manually).\n"
 "Press ESCAPE/Q to quit.";
 
 static constexpr float CLIP_DIST_MIN = 0.0001f;

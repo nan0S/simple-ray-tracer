@@ -1,5 +1,0 @@
-file(GLOB_RECURSE SRC src/*.cpp)
-add_executable(raytracer ${SRC})
-target_include_directories(raytracer PRIVATE src deps)
-target_link_libraries(raytracer glfw GLEW GL GLU)
-add_subdirectory(deps/assimp)

@@ -6,6 +6,7 @@
 
 #include "Utils/Log.h"
 
+#define UNUSED __attribute__((unused))
 namespace fs = std::filesystem;
 
 void glClearError()
@@ -13,7 +14,7 @@ void glClearError()
    while (glGetError() != GL_NO_ERROR);
 }
 
-bool glLogError(const char* call, const char* file, int line)
+bool glLogError(UNUSED const char* call, const char* file, UNUSED int line)
 {
    GLenum errcode;
    bool good = true;

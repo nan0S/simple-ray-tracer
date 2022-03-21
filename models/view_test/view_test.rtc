@@ -1,6 +1,6 @@
 # Test view scene: in OBJ format coords righthanded, CCW faces
 models/view_test/view_test.obj
-view_test.png
+models/view_test/view_test
 1
 600 400
 0.0 0.0 2.0

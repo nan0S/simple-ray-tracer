@@ -11,21 +11,16 @@
 #include <assimp/postprocess.h>
 #include <assimp/Importer.hpp>
 #include <assimp/material.h>
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include <stb/stb_image_write.h>
 
 #include "Utils/Log.h"
 #include "Utils/Error.h"
 #include "Graphics/Shader.h"
+#include "Raytracer.h"
+#include "Const.h"
 
 #define MAX_LIGHTS 20
-
-using uint = unsigned int;
-
-struct Light
-{
-   glm::vec3 position;
-   glm::vec3 color;
-   float intensity;
-};
 
 struct Config
 {
@@ -38,34 +33,14 @@ struct Config
    glm::vec3 la;
    glm::vec3 up;
    float yview;
-   std::vector<Light> lights;
 };
 
-struct WindowContext {
+struct WindowContext
+{
    glm::mat4 projection;
    float clip_dist_min;
    float clip_dist_max;
    float fov;
-};
-
-struct Triangle
-{
-   glm::vec3 v[3];
-};
-
-struct MeshData
-{
-   glm::vec3 ka;
-   glm::vec3 kd;
-   glm::vec3 ks;
-};
-
-struct RayTracerData
-{
-   std::vector<Triangle> tris;
-   std::vector<glm::vec3> normals;
-   std::vector<uint> mesh_indices;
-   std::vector<MeshData> mesh_data;
 };
 
 struct RenderData
@@ -82,7 +57,7 @@ static void glfwErrorCallback(int code, const char *desc);
 static void windowResizeCallback(GLFWwindow*, int width, int height);
 static void keyInputCallback(GLFWwindow* window, int key, int, int action, int);
 
-template<class T> std::ostream& operator<<(std::ostream &out, const glm::vec<3, T>& v);
+template<class T> std::ostream& operator<<(std::ostream &out, const glm::vec<3, T> &v);
 template<class T> std::istream& operator>>(std::istream &in, glm::vec<3, T> &v);
 
 static const char *USAGE_STR =
@@ -105,8 +80,6 @@ static const char *INSTRUCTION_STR =
 "Press LEFT MOUSE BUTTON to print the current position (useful for changing script manually).\n"
 "Press ESCAPE/Q to quit.";
 
-static constexpr int WINDOW_WIDTH = 1280;
-static constexpr int WINDOW_HEIGHT = 720;
 static constexpr float CLIP_DIST_MIN_FACTOR = 0.0001f;
 static constexpr float CLIP_DIST_MAX_FACTOR = 20;
 static constexpr float MOVEMENT_SPEED_FACTOR = 0.45f;
@@ -120,6 +93,7 @@ int main(int argc, char *argv[])
 
    /* Parse configuration. */
    Config config;
+   RayTracerData rtdata;
    {
       std::ifstream config_file(config_file_path);
       if (!config_file.is_open())
@@ -168,7 +142,7 @@ int main(int argc, char *argv[])
                char c;
                if (!(ss >> c) || c != 'L')
                   break;
-               Light &light = config.lights.emplace_back();
+               Light &light = rtdata.lights.emplace_back();
                ss >> light.position >> light.color >> light.intensity;
                light.color /= 255;
                light.intensity *= 0.01f;
@@ -177,7 +151,7 @@ int main(int argc, char *argv[])
       }
    }
 
-   if (config.lights.size() > MAX_LIGHTS)
+   if (rtdata.lights.size() > MAX_LIGHTS)
       ERROR("Too many lights in the scene.");
 
    /* Initialize OpenGL. */
@@ -190,7 +164,7 @@ int main(int argc, char *argv[])
    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
    glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
-   GLFWwindow* window = glfwCreateWindow(WINDOW_WIDTH, WINDOW_HEIGHT,
+   GLFWwindow* window = glfwCreateWindow(config.xres, config.yres,
                                          "SimpleRayTracer", NULL, NULL);
    if (!window)
       ERROR("Failed to create GLFW window.");
@@ -208,15 +182,12 @@ int main(int argc, char *argv[])
 
    GL_CALL(glClearColor(0, 0, 0, 1));
    GL_CALL(glClear(GL_COLOR_BUFFER_BIT));
+   glfwSwapBuffers(window);
    GL_CALL(glEnable(GL_DEPTH_TEST));
-   GL_CALL(glEnable(GL_CULL_FACE));
 
-   /* Prepare program variables, load assets ... */
-   RayTracerData rtdata;
+   /* Load assets. */
    int indices_count;
-   const float inf = 1e18f;
-   glm::vec3 min_point(inf, inf, inf);
-   glm::vec3 max_point(-inf, -inf, -inf);
+   float dist_bound;
    {
       RenderData rdata;
       {
@@ -248,6 +219,9 @@ int main(int argc, char *argv[])
          rdata.indices.reserve(n_tris * 3);
 
          uint index_offset = 0;
+         constexpr float inf = std::numeric_limits<float>::infinity();
+         glm::vec3 min_point(inf, inf, inf);
+         glm::vec3 max_point(-inf, -inf, -inf);
          for (uint i = 0; i < scene->mNumMeshes; ++i)
          {
             const aiMesh *mesh = scene->mMeshes[i];
@@ -276,9 +250,11 @@ int main(int argc, char *argv[])
                for (uint k = 0; k < face.mNumIndices; ++k)
                {
                   uint idx = face.mIndices[k];
-                  tri.v[k] = glm::vec3(verts[idx].x, verts[idx].y, verts[idx].z);
+                  tri.p[k] = glm::vec3(verts[idx].x, verts[idx].y, verts[idx].z);
                   rdata.indices.push_back(index_offset + idx);
                }
+               tri.bar.u -= tri.bar.P;
+               tri.bar.v -= tri.bar.P;
                {
                   uint idx = face.mIndices[0];
                   rtdata.normals.push_back(glm::vec3(normals[idx].x,
@@ -309,9 +285,11 @@ int main(int argc, char *argv[])
 
             index_offset += mesh->mNumVertices;
          }
+
+         dist_bound = glm::length(max_point - min_point);
       }
 
-      /* Setup buffers and variables. */
+      /* Setup OpenGL buffers. */
       {
          GLuint vao;
          GL_CALL(glGenVertexArrays(1, &vao));
@@ -379,61 +357,78 @@ int main(int argc, char *argv[])
       indices_count = static_cast<int>(rdata.indices.size());
    }
 
-   GLuint shader = Graphics::loadGraphicsShader("shaders/vertex.glsl", "shaders/fragment.glsl");
-   GL_CALL(glUseProgram(shader));
-   GL_CALL(GLint mvp_loc = glGetUniformLocation(shader, "mvp"));
-   GL_CALL(GLint vp_loc = glGetUniformLocation(shader, "vp"));
+   /* Setup shader. */
+   GLuint mvp_loc, vp_loc;
    {
-      GL_CALL(GLint light_count_loc = glGetUniformLocation(shader, "light_count"));
-      GL_CALL(glUniform1i(light_count_loc, static_cast<int>(config.lights.size())));
-   }
-   for (size_t i = 0; i < config.lights.size(); ++i)
-   {
-      std::string location_str_base = "lights[" + std::to_string(i) + "].";
-      Light &light = config.lights[i];
+      GLuint shader = Graphics::loadGraphicsShader("shaders/vertex.glsl", "shaders/fragment.glsl");
+      GL_CALL(glUseProgram(shader));
+      GL_CALL(mvp_loc = glGetUniformLocation(shader, "mvp"));
+      GL_CALL(vp_loc = glGetUniformLocation(shader, "vp"));
       {
-         std::string position_str = location_str_base + "position";
-         GL_CALL(GLint position_loc = glGetUniformLocation(shader, position_str.c_str()));
-         GL_CALL(glUniform3f(position_loc, light.position.x, light.position.y, light.position.z));
+         GL_CALL(GLint light_count_loc = glGetUniformLocation(shader, "light_count"));
+         GL_CALL(glUniform1i(light_count_loc, static_cast<int>(rtdata.lights.size())));
       }
+      for (size_t i = 0; i < rtdata.lights.size(); ++i)
       {
-         std::string color_str = location_str_base + "color";
-         GL_CALL(GLint color_loc = glGetUniformLocation(shader, color_str.c_str()));
-         GL_CALL(glUniform3f(color_loc, light.color.x, light.color.y, light.color.z));
+         std::string location_str_base = "lights[" + std::to_string(i) + "].";
+         Light &light = rtdata.lights[i];
+         {
+            std::string position_str = location_str_base + "position";
+            GL_CALL(GLint position_loc = glGetUniformLocation(shader, position_str.c_str()));
+            GL_CALL(glUniform3f(position_loc, light.position.x, light.position.y, light.position.z));
+         }
+         {
+            std::string color_str = location_str_base + "color";
+            GL_CALL(GLint color_loc = glGetUniformLocation(shader, color_str.c_str()));
+            GL_CALL(glUniform3f(color_loc, light.color.x, light.color.y, light.color.z));
+         }
+         {
+            std::string intensity_str = location_str_base + "intensity";
+            GL_CALL(GLint intensity_loc = glGetUniformLocation(shader, intensity_str.c_str()));
+            GL_CALL(glUniform1f(intensity_loc, light.intensity));
+         }
       }
-      {
-         std::string intensity_str = location_str_base + "intensity";
-         GL_CALL(GLint intensity_loc = glGetUniformLocation(shader, intensity_str.c_str()));
-         GL_CALL(glUniform1f(intensity_loc, light.intensity));
-      }
-   }
-   float dist_bound = glm::length(max_point - min_point);
-   {
       GL_CALL(GLint dist_bound_loc = glGetUniformLocation(shader, "dist_bound"));
       GL_CALL(glUniform1f(dist_bound_loc, dist_bound));
-   } 
+      GL_CALL(GLint specular_pow_factor_loc = glGetUniformLocation(shader, "specular_pow_factor"));
+      GL_CALL(glUniform1f(specular_pow_factor_loc, SPECULAR_POW_FACTOR));
+      GL_CALL(GLint A_loc = glGetUniformLocation(shader, "A"));
+      GL_CALL(GLint B_loc = glGetUniformLocation(shader, "B"));
+      GL_CALL(GLint C_loc = glGetUniformLocation(shader, "C"));
+      GL_CALL(glUniform1f(A_loc, A));
+      GL_CALL(glUniform1f(B_loc, B));
+      GL_CALL(glUniform1f(C_loc, C));
+   }
 
    glm::vec3 position = config.vp;
    glm::vec3 forward = glm::normalize(config.la - position);
    glm::vec3 up = glm::normalize(config.up);
-   glm::vec3 right = glm::cross(up, forward);
+   glm::vec3 right = glm::cross(forward, up);
+   glm::vec3 buffer[config.xres * config.yres];
+
+   float movement_speed, focal_length;
+   {
+      focal_length = config.yres / config.yview;
+      movement_speed = dist_bound * MOVEMENT_SPEED_FACTOR;
+      window_context.clip_dist_min = dist_bound * CLIP_DIST_MIN_FACTOR;
+      window_context.clip_dist_max = dist_bound * CLIP_DIST_MAX_FACTOR;
+      float x = sqrtf(config.xres * config.xres + config.yres * config.yres);
+      window_context.fov = 2 * std::atan(0.5f * x / focal_length);
+      windowResizeCallback(window, config.xres, config.yres);
+      rayTrace(&rtdata, config.xres, config.yres, focal_length,
+               position, forward, right, dist_bound, config.k, buffer);
+   }
 
    float vert_rotation = 0;
    double last_xpos, last_ypos;
    glfwGetCursorPos(window, &last_xpos, &last_ypos);
 
-   float movement_speed = dist_bound * MOVEMENT_SPEED_FACTOR;
-   window_context.clip_dist_min = dist_bound * CLIP_DIST_MIN_FACTOR;
-   window_context.clip_dist_max = dist_bound * CLIP_DIST_MAX_FACTOR;
-   window_context.fov = 2 * std::atan(0.5f / config.yview);
-   windowResizeCallback(window, WINDOW_WIDTH, WINDOW_HEIGHT);
-
    int u_last_state = GLFW_RELEASE;
+   int r_last_state = GLFW_RELEASE;
    int left_last_state = GLFW_RELEASE;
 
    print(INSTRUCTION_STR);
 
-   /* Main loop. */
    while (!glfwWindowShouldClose(window))
    {
       /* Calculate delta time. */
@@ -444,29 +439,29 @@ int main(int argc, char *argv[])
          delta_time = now - last_time;
          last_time = now;
       }
-      /* Calculate mouse movement. */
+      /* Calculate rotation. */
       float delta_hor, delta_vert;
       {
          static constexpr float pi_2 = static_cast<float>(M_PI_2);
          double xpos, ypos;
          glfwGetCursorPos(window, &xpos, &ypos);
-         delta_hor = delta_time * LOOK_SENSITIVITY * static_cast<float>(xpos - last_xpos);
-         delta_vert = delta_time * LOOK_SENSITIVITY * static_cast<float>(ypos - last_ypos);
+         delta_hor = delta_time * LOOK_SENSITIVITY * static_cast<float>(last_xpos - xpos);
+         delta_vert = delta_time * LOOK_SENSITIVITY * static_cast<float>(last_ypos - ypos);
          delta_vert = glm::clamp<float>(vert_rotation + delta_vert, -pi_2, pi_2) - vert_rotation;
          vert_rotation += delta_vert;
          last_xpos = xpos;
          last_ypos = ypos;
       }
-      /* Calculate keyboard input. */
+      /* Calculate movement. */
       {
          glm::vec3 delta_pos(0);
          if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
             delta_pos += forward;
          if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
             delta_pos -= forward;
-         if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
-            delta_pos += right;
          if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+            delta_pos += right;
+         if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
             delta_pos -= right;
          if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS)
             delta_pos += up;
@@ -477,16 +472,24 @@ int main(int argc, char *argv[])
       }
       /* Update camera view. */
       {
-         glm::mat4 rot = glm::rotate(-delta_hor, up);
+         glm::mat4 rot = glm::rotate(delta_hor, up);
          forward = rot * glm::rotate(delta_vert, right) * glm::vec4(forward, 0);
          right = rot * glm::vec4(right, 0);
-         glm::vec3 visual_up = glm::cross(forward, right);
+         glm::vec3 visual_up = glm::cross(right, forward);
          glm::mat4 view = glm::lookAt(position, position + forward, visual_up);
          glm::mat4 mvp = window_context.projection * view;
          GL_CALL(glUniformMatrix4fv(mvp_loc, 1, GL_FALSE, &mvp[0][0]));
       }
-      /* Respond to other commands. */
+      /* Respond to keyboard input. */
       {
+         /* Ray trace. */
+         {
+            int r_state = glfwGetKey(window, GLFW_KEY_R);
+            if (r_last_state == GLFW_RELEASE && r_state == GLFW_PRESS)
+               rayTrace(&rtdata, config.xres, config.yres, focal_length,
+                        position, forward, right, dist_bound, config.k, buffer);
+            r_last_state = r_state;
+         }
          /* Update configuration. */
          {
             int u_state = glfwGetKey(window, GLFW_KEY_U);
@@ -503,7 +506,7 @@ int main(int argc, char *argv[])
                out << la.x << ' ' << la.y << ' ' << la.z << '\n';
                out << config.up.x << ' ' << config.up.y << ' ' << config.up.z << '\n';
                out << config.yview << '\n';
-               for (Light &l : config.lights)
+               for (Light &l : rtdata.lights)
                {
                   glm::ivec3 color(l.color.x * 255, l.color.y * 255, l.color.z * 255);
                   out << "L " << l.position.x << ' ' << l.position.y << ' ' << l.position.z << ' ';
@@ -528,6 +531,19 @@ int main(int argc, char *argv[])
       glfwPollEvents();
       glfwSwapBuffers(window);
    }
+   
+   /* Save ray tracing output to a file. */
+   glm::vec<3, unsigned char> img[config.xres * config.yres];
+   for (int i = 0; i < config.yres; ++i)
+      for (int j = 0; j < config.xres; ++j)
+      {
+         int idx = i * config.xres + j;
+         img[idx] = 255.f * glm::min(buffer[idx], glm::vec3(1));
+      }
+   std::string out_filepath = config.output_file_path + ".jpg";
+   stbi_write_jpg(out_filepath.c_str(),
+                  config.xres, config.yres, 3,
+                  img, 3 * config.xres);
 
    return 0;
 }

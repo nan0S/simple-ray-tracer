@@ -1,11 +1,11 @@
 # Classic scene.
 models/cornell_box/cornell_box.obj
-cornell_box.png
-0
-600 400
+models/cornell_box/cornell_box
+2
+800 800
 254.727 413.876 -575.126
 254.775 413.693 -574.144
 0 1 0
-1
-L 0 10 10 255 255 0 100
-L 10 10 0 0 255 255 50
+0.5
+L 0 10 10 255 255 255 100
+

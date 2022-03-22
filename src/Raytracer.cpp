@@ -6,6 +6,7 @@
 #define TEST_CULL
 static constexpr float REFLECT_DAMP_FACTOR = 0.1f;
 
+static int rayTriangleIntersection(const Ray &ray, const Triangle &tri, real *t);
 static col3 rayTrace(const Ray &ray, RayTracerData *rtdata, int depth);
 static size_t firstIntersection(const Ray &ray, RayTracerData *rtdata, real *ct);
 
@@ -28,16 +29,16 @@ int rayTriangleIntersection(const Ray &ray, const Triangle &tri, real *t)
    *t /= det;
 #else
    if (det > -EPS && det < EPS)
-     return 0;
+      return 0;
    real inv_det = 1 / det;
    vec3 tvec = ray.o - tri.bar.P;
    real u = glm::dot(tvec, pvec) * inv_det;
    if (u < 0 || u > 1)
-     return 0;
+      return 0;
    vec3 qvec = glm::cross(tvec, tri.bar.u);
    real v = glm::dot(ray.d, qvec) * inv_det;
    if (v < 0 || u + v > 1)
-     return 0;
+      return 0;
    *t = glm::dot(tri.bar.v, qvec) * inv_det;
 #endif
    return 1;

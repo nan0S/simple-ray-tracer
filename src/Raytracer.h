@@ -56,6 +56,5 @@ struct RayTracerData
    std::vector<Light> lights;
 };
 
-int rayTriangleIntersection(const Ray &ray, const Triangle &tri, real *t);
 void rayTrace(RayTracerData *rtdata, int xres, int yres, real focal_length,
               vec3 origin, vec3 forward, vec3 right, int k, col3 *output);

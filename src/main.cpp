@@ -238,7 +238,6 @@ int main(int argc, char *argv[])
          rdata.kss.reserve(n_vertices);
          rdata.indices.reserve(n_tris * 3);
 
-
          uint index_offset = 0;
          for (uint i = 0; i < scene->mNumMeshes; ++i)
          {
